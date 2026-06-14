@@ -187,6 +187,7 @@ export function HttpApiToolConfig({
                             <Label className="text-xs text-muted-foreground">
                                 Define the parameters that the LLM will provide when calling this tool.
                                 These will be sent as JSON body for POST/PUT/PATCH or as URL query params for GET/DELETE.
+                                Use "Exclude From Body" for parameters used only in URL/header template variables.
                             </Label>
                             <ParameterEditor
                                 parameters={parameters}

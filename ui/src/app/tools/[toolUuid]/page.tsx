@@ -246,6 +246,7 @@ export default function ToolDetailPage() {
                             type: normalizeParameterType(p.type),
                             description: p.description || "",
                             required: p.required ?? true,
+                            exclude_from_body: p.exclude_from_body ?? false,
                         }))
                     );
                 } else {

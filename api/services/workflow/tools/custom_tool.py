@@ -3,6 +3,7 @@
 import json
 import re
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from loguru import logger
@@ -166,6 +167,19 @@ def _coerce_parameter_value(value: Any, param_type: str) -> Any:
     return value
 
 
+def _build_render_context(
+    call_context_vars: Optional[Dict[str, Any]] = None,
+    gathered_context_vars: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build the render context dict with flat keys and nested context objects."""
+    initial_context = dict(call_context_vars or {})
+    return {
+        **initial_context,
+        "initial_context": initial_context,
+        "gathered_context": dict(gathered_context_vars or {}),
+    }
+
+
 def _resolve_preset_parameters(
     config: Dict[str, Any],
     call_context_vars: Optional[Dict[str, Any]],
@@ -177,12 +191,7 @@ def _resolve_preset_parameters(
     if not preset_parameters:
         return {}
 
-    initial_context = dict(call_context_vars or {})
-    render_context: Dict[str, Any] = {
-        **initial_context,
-        "initial_context": initial_context,
-        "gathered_context": dict(gathered_context_vars or {}),
-    }
+    render_context = _build_render_context(call_context_vars, gathered_context_vars)
 
     resolved: Dict[str, Any] = {}
     for param in preset_parameters:
@@ -231,8 +240,23 @@ async def execute_http_tool(
     method = config.get("method", "POST").upper()
     url = config.get("url", "")
 
+    # Build render context with workflow context and LLM arguments
+    render_context = _build_render_context(call_context_vars, gathered_context_vars)
+    render_context.update(arguments or {})
+
+    # Resolve template variables in URL path/query only (keep domain unchanged)
+    parsed = urlparse(url)
+    rendered_path = render_template(parsed.path, render_context)
+    rendered_query = render_template(parsed.query, render_context)
+    rendered_fragment = render_template(parsed.fragment, render_context)
+    url = urlunparse((parsed.scheme, parsed.netloc, rendered_path, parsed.params, rendered_query, rendered_fragment))
+
     # Get headers from config
     headers = dict(config.get("headers", {}) or {})
+    headers = {
+        key: render_template(value, render_context)
+        for key, value in headers.items()
+    }
 
     # Add auth header if credential is configured
     credential_uuid = config.get("credential_uuid")
@@ -266,13 +290,25 @@ async def execute_http_tool(
 
     resolved_arguments = {**(arguments or {}), **preset_arguments}
 
+    # Collect parameter names that should be excluded from the body
+    parameters = config.get("parameters", []) or []
+    excluded_param_names = {
+        p["name"] for p in parameters if p.get("exclude_from_body")
+    }
+
     # Build request: JSON body for POST/PUT/PATCH, query params for GET/DELETE
     body = None
     params = None
     if method in ("POST", "PUT", "PATCH"):
-        body = resolved_arguments
+        body = {
+            k: v for k, v in resolved_arguments.items()
+            if k not in excluded_param_names
+        }
     elif method in ("GET", "DELETE") and resolved_arguments:
-        params = resolved_arguments
+        params = {
+            k: v for k, v in resolved_arguments.items()
+            if k not in excluded_param_names
+        }
 
     logger.info(
         f"Executing custom tool '{tool.name}' ({tool.tool_uuid}): {method} {url}"

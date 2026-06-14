@@ -730,6 +730,207 @@ class TestExecuteHttpTool:
                 # Verify credential lookup was NOT called
                 mock_db.get_credential_by_uuid.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_exclude_from_body_param_resolves_in_url_not_body(self):
+        """Test that exclude_from_body param is resolved in URL but excluded from body."""
+        tool = MockToolModel(
+            tool_uuid="test-uuid-excl",
+            name="Exclude Body API",
+            description="API with exclude_from_body param",
+            category="http_api",
+            definition={
+                "schema_version": 1,
+                "type": "http_api",
+                "config": {
+                    "method": "POST",
+                    "url": "https://api.example.com/{{account_id}}/details",
+                    "parameters": [
+                        {
+                            "name": "account_id",
+                            "type": "string",
+                            "description": "Account ID for routing",
+                            "required": True,
+                            "exclude_from_body": True,
+                        },
+                        {
+                            "name": "detail",
+                            "type": "string",
+                            "description": "Detail to fetch",
+                            "required": True,
+                        },
+                    ],
+                    "timeout_ms": 5000,
+                },
+            },
+        )
+
+        arguments = {"account_id": "42", "detail": "billing"}
+
+        with patch(
+            "api.services.workflow.tools.custom_tool.httpx.AsyncClient"
+        ) as mock_client_class:
+            mock_client = AsyncMock()
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"success": True}
+            mock_client.request.return_value = mock_response
+            mock_client_class.return_value.__aenter__.return_value = mock_client
+
+            await execute_http_tool(tool, arguments)
+
+            call_kwargs = mock_client.request.call_args.kwargs
+            assert call_kwargs["url"] == "https://api.example.com/42/details"
+            assert call_kwargs["json"] == {"detail": "billing"}
+            assert "account_id" not in call_kwargs["json"]
+
+    @pytest.mark.asyncio
+    async def test_exclude_from_body_params_filtered_from_get_params(self):
+        """Test that exclude_from_body params are excluded from GET query params."""
+        tool = MockToolModel(
+            tool_uuid="test-uuid-excl-get",
+            name="Exclude Body GET",
+            description="GET with exclude_from_body param",
+            category="http_api",
+            definition={
+                "schema_version": 1,
+                "type": "http_api",
+                "config": {
+                    "method": "GET",
+                    "url": "https://api.example.com/{{endpoint}}/resource",
+                    "parameters": [
+                        {
+                            "name": "endpoint",
+                            "type": "string",
+                            "description": "Endpoint segment",
+                            "required": True,
+                            "exclude_from_body": True,
+                        },
+                        {
+                            "name": "q",
+                            "type": "string",
+                            "description": "Search query",
+                            "required": False,
+                        },
+                    ],
+                    "timeout_ms": 5000,
+                },
+            },
+        )
+
+        arguments = {"endpoint": "users", "q": "john"}
+
+        with patch(
+            "api.services.workflow.tools.custom_tool.httpx.AsyncClient"
+        ) as mock_client_class:
+            mock_client = AsyncMock()
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"success": True}
+            mock_client.request.return_value = mock_response
+            mock_client_class.return_value.__aenter__.return_value = mock_client
+
+            await execute_http_tool(tool, arguments)
+
+            call_kwargs = mock_client.request.call_args.kwargs
+            assert call_kwargs["url"] == "https://api.example.com/users/resource"
+            assert call_kwargs["params"] == {"q": "john"}
+            assert "endpoint" not in call_kwargs["params"]
+
+    @pytest.mark.asyncio
+    async def test_exclude_from_body_false_sends_in_body(self):
+        """Test that exclude_from_body=false (default) sends param in body."""
+        tool = MockToolModel(
+            tool_uuid="test-uuid-excl-false",
+            name="Exclude False",
+            description="exclude_from_body false sends in body",
+            category="http_api",
+            definition={
+                "schema_version": 1,
+                "type": "http_api",
+                "config": {
+                    "method": "POST",
+                    "url": "https://api.example.com/{{account_id}}/details",
+                    "parameters": [
+                        {
+                            "name": "account_id",
+                            "type": "string",
+                            "description": "Account ID",
+                            "required": True,
+                            "exclude_from_body": False,
+                        },
+                    ],
+                    "timeout_ms": 5000,
+                },
+            },
+        )
+
+        arguments = {"account_id": "42"}
+
+        with patch(
+            "api.services.workflow.tools.custom_tool.httpx.AsyncClient"
+        ) as mock_client_class:
+            mock_client = AsyncMock()
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"success": True}
+            mock_client.request.return_value = mock_response
+            mock_client_class.return_value.__aenter__.return_value = mock_client
+
+            await execute_http_tool(tool, arguments)
+
+            call_kwargs = mock_client.request.call_args.kwargs
+            assert call_kwargs["url"] == "https://api.example.com/42/details"
+            assert call_kwargs["json"] == {"account_id": "42"}
+
+    @pytest.mark.asyncio
+    async def test_exclude_from_body_param_also_works_in_header(self):
+        """Test that exclude_from_body param resolves in header templates too."""
+        tool = MockToolModel(
+            tool_uuid="test-uuid-excl-header",
+            name="Exclude Header",
+            description="exclude_from_body param in header template",
+            category="http_api",
+            definition={
+                "schema_version": 1,
+                "type": "http_api",
+                "config": {
+                    "method": "POST",
+                    "url": "https://api.example.com/resource",
+                    "parameters": [
+                        {
+                            "name": "token",
+                            "type": "string",
+                            "description": "Auth token",
+                            "required": True,
+                            "exclude_from_body": True,
+                        },
+                    ],
+                    "headers": {
+                        "Authorization": "Bearer {{token}}",
+                    },
+                    "timeout_ms": 5000,
+                },
+            },
+        )
+
+        arguments = {"token": "my-secret-token"}
+
+        with patch(
+            "api.services.workflow.tools.custom_tool.httpx.AsyncClient"
+        ) as mock_client_class:
+            mock_client = AsyncMock()
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"success": True}
+            mock_client.request.return_value = mock_response
+            mock_client_class.return_value.__aenter__.return_value = mock_client
+
+            await execute_http_tool(tool, arguments)
+
+            call_kwargs = mock_client.request.call_args.kwargs
+            assert call_kwargs["headers"]["Authorization"] == "Bearer my-secret-token"
+            assert call_kwargs["json"] == {}
+
 
 class TestCoerceParameterValue:
     """Tests for _coerce_parameter_value function."""

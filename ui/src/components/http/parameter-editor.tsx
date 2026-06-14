@@ -22,6 +22,7 @@ export interface ToolParameter {
     type: ParameterType;
     description: string;
     required: boolean;
+    exclude_from_body: boolean;
 }
 
 export interface PresetToolParameter {
@@ -45,7 +46,7 @@ export function ParameterEditor({
     const addParameter = () => {
         onChange([
             ...parameters,
-            { name: "", type: "string", description: "", required: true },
+            { name: "", type: "string", description: "", required: true, exclude_from_body: false },
         ]);
     };
 
@@ -158,6 +159,20 @@ export function ParameterEditor({
                         />
                         <Label htmlFor={`required-${index}`} className="text-sm">
                             Required
+                        </Label>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <Switch
+                            id={`exclude-from-body-${index}`}
+                            checked={param.exclude_from_body}
+                            onCheckedChange={(checked) =>
+                                updateParameter(index, "exclude_from_body", checked)
+                            }
+                            disabled={disabled}
+                        />
+                        <Label htmlFor={`exclude-from-body-${index}`} className="text-sm">
+                            Exclude From Body
                         </Label>
                     </div>
                 </div>

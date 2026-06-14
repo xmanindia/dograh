@@ -3638,6 +3638,14 @@ export type ToolParameter = {
      * Whether this parameter is required when the tool is called.
      */
     required?: boolean;
+    /**
+     * Exclude From Body
+     *
+     * If true, the parameter is only used for URL path / header template
+     * rendering via {{variable}} patterns and is excluded from the request
+     * body or query params.
+     */
+    exclude_from_body?: boolean;
 };
 
 /**

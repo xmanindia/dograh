@@ -86,11 +86,32 @@ from pipecat.turns.user_stop import (
     TurnAnalyzerUserTurnStopStrategy,
 )
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
+from pipecat.frames.frames import (
+    FunctionCallCancelFrame,
+    FunctionCallResultFrame,
+    FunctionCallsStartedFrame,
+)
 from pipecat.utils.enums import EndTaskReason, RealtimeFeedbackType
 from pipecat.utils.run_context import set_current_org_id, set_current_run_id
 
 # Setup tracing if enabled
 ensure_tracing()
+
+
+class PatchedFunctionCallUserMuteStrategy(FunctionCallUserMuteStrategy):
+    """Like FunctionCallUserMuteStrategy but uses discard() instead of remove()
+    to tolerate FunctionCallCancelFrame/FunctionCallResultFrame for unknown
+    tool_call_ids (avoids KeyError race during interruptions)."""
+
+    async def process_frame(self, frame) -> bool:
+        await super(FunctionCallUserMuteStrategy, self).process_frame(frame)
+
+        if isinstance(frame, FunctionCallsStartedFrame):
+            await self._handle_function_calls_started(frame)
+        elif isinstance(frame, (FunctionCallCancelFrame, FunctionCallResultFrame)):
+            self._function_call_in_progress.discard(frame.tool_call_id)
+
+        return bool(self._function_call_in_progress)
 
 
 def _create_realtime_user_turn_config(provider: str):
@@ -570,7 +591,7 @@ async def _run_pipeline(
 
     user_mute_strategies = [
         MuteUntilFirstBotCompleteUserMuteStrategy(),
-        FunctionCallUserMuteStrategy(),
+        PatchedFunctionCallUserMuteStrategy(),
         CallbackUserMuteStrategy(should_mute_callback=engine.should_mute_user),
     ]
     user_vad_analyzer = SileroVADAnalyzer(params=VADParams(stop_secs=0.2))
